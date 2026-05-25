@@ -18,8 +18,10 @@
 
 #include <android-base/logging.h>
 
+#include <cmath>
 #include <cerrno>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -27,6 +29,9 @@
 namespace aidl::vendor::intel::location {
 
 namespace {
+
+constexpr double kDefaultLatitude = 90.0;
+constexpr double kDefaultLongitude = 0.0;
 
 bool ParseDoubleNoExcept(const std::string& text, double* out) {
     errno = 0;
@@ -73,12 +78,23 @@ ndk::ScopedAStatus LocationHal::getLongitude(double* _aidl_return) {
 }
 
 bool LocationHal::readConfig() {
+    if (!std::filesystem::exists(mConfigPath)) {
+        // If config is absent, serve North Pole as explicit default.
+        mLatitude = kDefaultLatitude;
+        mLongitude = kDefaultLongitude;
+        LOG(WARNING) << "LocationHal: missing config " << mConfigPath
+                     << ", using default location";
+        return true;
+    }
+
     std::ifstream file(mConfigPath);
     if (!file.is_open()) {
         LOG(WARNING) << "LocationHal: cannot open " << mConfigPath;
         return false;
     }
 
+    double parsedLatitude = 0.0;
+    double parsedLongitude = 0.0;
     bool latParsed = false;
     bool lonParsed = false;
 
@@ -111,7 +127,7 @@ bool LocationHal::readConfig() {
             double parsed = 0.0;
             if (ParseDoubleNoExcept(val, &parsed)) {
                 if (parsed >= -90.0 && parsed <= 90.0) {
-                    mLatitude = parsed;
+                    parsedLatitude = parsed;
                     latParsed = true;
                 } else {
                     LOG(WARNING) << "LocationHal: out-of-range latitude value at line "
@@ -124,7 +140,7 @@ bool LocationHal::readConfig() {
             double parsed = 0.0;
             if (ParseDoubleNoExcept(val, &parsed)) {
                 if (parsed >= -180.0 && parsed <= 180.0) {
-                    mLongitude = parsed;
+                    parsedLongitude = parsed;
                     lonParsed = true;
                 } else {
                     LOG(WARNING) << "LocationHal: out-of-range longitude value at line "
@@ -140,6 +156,9 @@ bool LocationHal::readConfig() {
         LOG(WARNING) << "LocationHal: missing or invalid coordinates in config";
         return false;
     }
+
+    mLatitude = parsedLatitude;
+    mLongitude = parsedLongitude;
 
     return true;
 }
