@@ -161,13 +161,16 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
         mWakeLockQueue = std::make_unique<WakeLockMessageQueue>(wakeLockDescriptor,
                                                                 true /* resetPointers */);
 
-        if (!mCallback || !mEventQueue || !mWakeLockQueue || mEventQueueFlag == nullptr) {
+        if (!mCallback || !mEventQueue || !mWakeLockQueue || mEventQueueFlag == nullptr ||
+            !mWakeLockQueue->isValid()) {
             result = Result::BAD_VALUE;
         }
 
-        // Start the thread to read events from the Wake Lock FMQ
-        mReadWakeLockQueueRun = true;
-        mWakeLockThread = std::thread(startReadWakeLockThread, this);
+        // Start the thread only when initialization is fully valid.
+        if (result == Result::OK) {
+            mReadWakeLockQueueRun = true;
+            mWakeLockThread = std::thread(startReadWakeLockThread, this);
+        }
 
         return result;
     }
@@ -218,6 +221,9 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
 
     void postEvents(const std::vector<V2_1::Event>& events, bool wakeup) override {
         std::lock_guard<std::mutex> lock(mWriteLock);
+        if (!mEventQueue || mEventQueueFlag == nullptr) {
+            return;
+        }
         if (mEventQueue->write(events)) {
             mEventQueueFlag->wake(static_cast<uint32_t>(EventQueueFlagBits::READ_AND_PROCESS));
 
@@ -261,6 +267,10 @@ struct Sensors : public ISensorsInterface, public ISensorsEventCallback {
         while (mReadWakeLockQueueRun.load()) {
             constexpr int64_t kReadTimeoutNs = 500 * 1000 * 1000;  // 500 ms
             uint32_t eventsHandled = 0;
+
+            if (mWakeLockQueue == nullptr || !mWakeLockQueue->isValid()) {
+                break;
+            }
 
             // Read events from the Wake Lock FMQ. Timeout after a reasonable amount of time to
             // ensure that any held wake lock is able to be released if it is held for too long.

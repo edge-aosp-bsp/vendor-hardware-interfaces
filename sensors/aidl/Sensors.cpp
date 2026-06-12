@@ -104,24 +104,40 @@ ScopedAStatus Sensors::initialize(
     // Ensure that any existing EventFlag is properly deleted
     deleteEventFlag();
 
-    // Create the EventFlag that is used to signal to the framework that sensor events have been
-    // written to the Event FMQ
-    if (EventFlag::createEventFlag(mEventQueue->getEventFlagWord(), &mEventQueueFlag) != OK) {
-        result = ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
-    }
-
     // Create the Wake Lock FMQ that is used by the framework to communicate whenever WAKE_UP
     // events have been successfully read and handled by the framework.
     mWakeLockQueue = std::make_unique<AidlMessageQueue<int32_t, SynchronizedReadWrite>>(
             in_wakeLockDescriptor, true /* resetPointers */);
 
-    if (!mCallback || !mEventQueue || !mWakeLockQueue || mEventQueueFlag == nullptr) {
+    // Validate all queues have valid state and non-zero capacity before proceeding
+    // to prevent division by zero in FMQ internals during read/write operations
+    bool eventQueueValid = mEventQueue && mEventQueue->isValid();
+    bool wakeLockQueueValid = mWakeLockQueue && mWakeLockQueue->isValid();
+    
+    if (!mCallback || !mEventQueue || !mWakeLockQueue || !eventQueueValid || !wakeLockQueueValid) {
+        result = ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    } else {
+        auto* eventFlagWord = mEventQueue->getEventFlagWord();
+        if (eventFlagWord == nullptr) {
+            result = ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+        }
+
+        // Create the EventFlag that is used to signal to the framework that sensor events have been
+        // written to the Event FMQ
+        if (result.isOk() && EventFlag::createEventFlag(eventFlagWord, &mEventQueueFlag) != OK) {
+            result = ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+        }
+    }
+
+    if (mEventQueueFlag == nullptr) {
         result = ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
     }
 
-    // Start the thread to read events from the Wake Lock FMQ
-    mReadWakeLockQueueRun = true;
-    mWakeLockThread = std::thread(startReadWakeLockThread, this);
+    // Start the thread only when initialization is fully valid.
+    if (result.isOk()) {
+        mReadWakeLockQueueRun = true;
+        mWakeLockThread = std::thread(startReadWakeLockThread, this);
+    }
     return result;
 }
 

@@ -66,7 +66,9 @@ class Sensors : public BnSensors, public ISensorsEventCallback {
     virtual ~Sensors() {
         deleteEventFlag();
         mReadWakeLockQueueRun = false;
-        mWakeLockThread.join();
+        if (mWakeLockThread.joinable()) {
+            mWakeLockThread.join();
+        }
     }
 
     ::ndk::ScopedAStatus activate(int32_t in_sensorHandle, bool in_enabled) override;
@@ -100,7 +102,11 @@ class Sensors : public BnSensors, public ISensorsEventCallback {
 
     void postEvents(const std::vector<Event>& events, bool wakeup) override {
         std::lock_guard<std::mutex> lock(mWriteLock);
-        if (mEventQueue == nullptr) {
+        if (mEventQueue == nullptr || mEventQueueFlag == nullptr || !mEventQueue->isValid()) {
+            return;
+        }
+        // Verify queue has sufficient capacity before writing to prevent division by zero in FMQ internals
+        if (mEventQueue->availableToWrite() == 0) {
             return;
         }
         if (mEventQueue->write(&events.front(), events.size())) {
@@ -141,6 +147,15 @@ class Sensors : public BnSensors, public ISensorsEventCallback {
         while (mReadWakeLockQueueRun.load()) {
             constexpr int64_t kReadTimeoutNs = 500 * 1000 * 1000;  // 500 ms
             int32_t eventsHandled = 0;
+
+            if (mWakeLockQueue == nullptr || !mWakeLockQueue->isValid()) {
+                break;
+            }
+
+            // Verify queue has data available and valid capacity before reading to prevent division by zero in FMQ internals
+            if (mWakeLockQueue->availableToRead() == 0) {
+                break;
+            }
 
             // Read events from the Wake Lock FMQ. Timeout after a reasonable amount of time to
             // ensure that any held wake lock is able to be released if it is held for too long.

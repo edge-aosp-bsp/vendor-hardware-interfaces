@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -677,7 +678,7 @@ ssize_t iiod_client_read_unlocked(struct iiod_client *client, void *desc,
             return ret;
         }
         if (to_read < 0)
-            return (ssize_t) to_read;
+            return -((ssize_t)(-to_read));
         if (!to_read)
             break;
 
@@ -693,6 +694,8 @@ ssize_t iiod_client_read_unlocked(struct iiod_client *client, void *desc,
         ret = iiod_client_read_all(client, desc, (char *) ptr, to_read);
         if (ret < 0)
             return ret;
+        if (ret > SSIZE_MAX - read)
+            return -EOVERFLOW;
 
         ptr += ret;
         read += ret;
@@ -720,7 +723,7 @@ ssize_t iiod_client_write_unlocked(struct iiod_client *client, void *desc,
     if (ret < 0)
         return ret;
     if (val < 0)
-        return (ssize_t) val;
+        return -((ssize_t)(-val));
 
     ret = iiod_client_write_all(client, desc, src, len);
     if (ret < 0)
@@ -730,7 +733,7 @@ ssize_t iiod_client_write_unlocked(struct iiod_client *client, void *desc,
     if (ret < 0)
         return ret;
     if (val < 0)
-        return (ssize_t) val;
+	return -((ssize_t)(-val));
 
     return (ssize_t) len;
 }

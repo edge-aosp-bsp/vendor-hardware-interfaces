@@ -122,7 +122,7 @@ int NetBluetoothMgmt::waitHciDev(int hci_interface) {
       .len = 0,
   };
 
-  if (write(fd, &cmd, 6) != 6) {
+  if (write(fd, &cmd, sizeof(cmd)) != (ssize_t)sizeof(cmd)) {
     ALOGE("error writing mgmt command: %s", strerror(errno));
     goto end;
   }

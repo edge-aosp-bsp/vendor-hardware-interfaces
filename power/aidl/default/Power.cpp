@@ -89,6 +89,9 @@ ndk::ScopedAStatus Power::getSessionChannel(int32_t, int32_t, ChannelConfig* _ai
     static AidlMessageQueue<ChannelMessage, SynchronizedReadWrite> stubQueue{20, true};
     static std::thread stubThread([&] {
         ChannelMessage data;
+        if (!stubQueue.isValid()) {
+            return;
+        }
         // This loop will only run while there is data waiting
         // to be processed, and blocks on a futex all other times
         while (stubQueue.readBlocking(&data, 1, 0)) {

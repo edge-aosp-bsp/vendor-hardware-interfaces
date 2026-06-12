@@ -566,9 +566,10 @@ static void network_cancel(const struct iio_device *dev)
 {
     struct iio_device_pdata *ppdata = dev->pdata;
 
+    iio_mutex_lock(ppdata->lock);
     do_cancel(&ppdata->io_ctx);
-
     ppdata->io_ctx.cancelled = true;
+    iio_mutex_unlock(ppdata->lock);
 }
 
 #ifndef _WIN32
