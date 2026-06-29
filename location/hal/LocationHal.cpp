@@ -23,6 +23,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -75,6 +77,68 @@ ndk::ScopedAStatus LocationHal::getLongitude(double* _aidl_return) {
     }
     *_aidl_return = mLongitude;
     return ndk::ScopedAStatus::ok();
+}
+
+ndk::ScopedAStatus LocationHal::setLocation(double latitudeDegrees, double longitudeDegrees) {
+    if (!std::isfinite(latitudeDegrees) || latitudeDegrees < -90.0 || latitudeDegrees > 90.0) {
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+    if (!std::isfinite(longitudeDegrees) || longitudeDegrees < -180.0 || longitudeDegrees > 180.0) {
+        return ndk::ScopedAStatus::fromExceptionCode(EX_ILLEGAL_ARGUMENT);
+    }
+
+    std::lock_guard<std::mutex> lock(mMutex);
+    if (!writeConfig(latitudeDegrees, longitudeDegrees)) {
+        return ndk::ScopedAStatus::fromExceptionCode(EX_SERVICE_SPECIFIC);
+    }
+    mLatitude = latitudeDegrees;
+    mLongitude = longitudeDegrees;
+    return ndk::ScopedAStatus::ok();
+}
+
+bool LocationHal::writeConfig(double latitudeDegrees, double longitudeDegrees) {
+    const std::filesystem::path configPath(mConfigPath);
+    const std::filesystem::path parentDir = configPath.parent_path();
+    if (parentDir.empty()) {
+        LOG(ERROR) << "LocationHal: config path has no parent directory: " << mConfigPath;
+        return false;
+    }
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(parentDir, ec)) {
+        LOG(ERROR) << "LocationHal: missing config directory " << parentDir;
+        return false;
+    }
+
+    // Write to a temporary file first, then atomically rename into place so a
+    // concurrent reader never observes a partially written config.
+    const std::filesystem::path tmpPath = configPath.string() + ".tmp";
+    {
+        std::ofstream file(tmpPath, std::ios::out | std::ios::trunc);
+        if (!file.is_open()) {
+            LOG(ERROR) << "LocationHal: cannot open " << tmpPath << " for writing";
+            return false;
+        }
+        file << std::setprecision(std::numeric_limits<double>::max_digits10);
+        file << "lat=" << latitudeDegrees << "\n";
+        file << "lon=" << longitudeDegrees << "\n";
+        file.flush();
+        if (!file.good()) {
+            LOG(ERROR) << "LocationHal: failed writing " << tmpPath;
+            std::filesystem::remove(tmpPath, ec);
+            return false;
+        }
+    }
+
+    std::filesystem::rename(tmpPath, configPath, ec);
+    if (ec) {
+        LOG(ERROR) << "LocationHal: failed to rename " << tmpPath << " to " << configPath
+                   << ": " << ec.message();
+        std::filesystem::remove(tmpPath, ec);
+        return false;
+    }
+
+    return true;
 }
 
 bool LocationHal::readConfig() {

@@ -30,4 +30,14 @@ interface ILocationHal {
      * Get the current longitude.
      */
     double getLongitude();
+
+    /**
+     * Persist a new static location. The HAL owns the vendor data store and is
+     * responsible for writing the configuration, so core domains never touch
+     * vendor data files directly.
+     *
+     * @param latitudeDegrees latitude in the range [-90.0, 90.0].
+     * @param longitudeDegrees longitude in the range [-180.0, 180.0].
+     */
+    void setLocation(double latitudeDegrees, double longitudeDegrees);
 }
