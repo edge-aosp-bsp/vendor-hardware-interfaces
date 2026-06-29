@@ -29,9 +29,11 @@ public:
 
     ndk::ScopedAStatus getLatitude(double* _aidl_return) override;
     ndk::ScopedAStatus getLongitude(double* _aidl_return) override;
+    ndk::ScopedAStatus setLocation(double latitudeDegrees, double longitudeDegrees);
 
 private:
     bool readConfig();
+    bool writeConfig(double latitudeDegrees, double longitudeDegrees);
 
     const std::string mConfigPath;
     mutable std::mutex mMutex;

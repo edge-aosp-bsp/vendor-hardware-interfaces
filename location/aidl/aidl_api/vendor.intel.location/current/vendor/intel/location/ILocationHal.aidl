@@ -21,4 +21,5 @@ package vendor.intel.location;
 interface ILocationHal {
   double getLatitude();
   double getLongitude();
+  void setLocation(double latitudeDegrees, double longitudeDegrees);
 }
