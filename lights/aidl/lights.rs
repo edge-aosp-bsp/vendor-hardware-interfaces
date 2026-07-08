@@ -201,7 +201,17 @@ impl LightsService {
 
 impl Default for LightsService {
 	fn default() -> Self {
-		Self::new([HwLight { id: 1, ordinal: 1, r#type: LightType::BACKLIGHT }])
+		// Only advertise the BACKLIGHT light when a physical sysfs device is
+		// available.  If no device is found the light list is empty, which is
+		// valid for a virtual device (CaaS VM) and satisfies the VTS HAL
+		// contract: setLightState must succeed for every ID returned by
+		// getLights(), so we must not advertise lights we cannot service.
+		let hw_lights: Vec<HwLight> = if Self::determine_backlight_device().is_some() {
+			vec![HwLight { id: 1, ordinal: 1, r#type: LightType::BACKLIGHT }]
+		} else {
+			vec![]
+		};
+		Self::new(hw_lights)
 	}
 }
 
